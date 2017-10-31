@@ -2,6 +2,7 @@ package main
 
 import (
     "fmt"
+    // "io/ioutil"
     "github.com/eddiejessup/gnex/read"
     "github.com/eddiejessup/gnex/lex"
 )
@@ -29,30 +30,7 @@ func readTest() {
     }
 }
 
-
-    // @staticmethod
-    // def default_initial_cat_codes():
-    //     char_to_cat = get_unset_ascii_char_dict()
-    //     char_to_cat.update({c: CatCode.other for c in ascii_characters})
-    //     char_to_cat.update({let: CatCode.letter for let in ascii_letters})
-
-    //     char_to_cat['\\'] = CatCode.escape
-    //     char_to_cat[' '] = CatCode.space
-    //     char_to_cat['%'] = CatCode.comment
-    //     char_to_cat[WeirdChar.null.value] = CatCode.ignored
-    //     # NON-STANDARD
-    //     char_to_cat[WeirdChar.line_feed.value] = CatCode.end_of_line
-    //     char_to_cat[WeirdChar.carriage_return.value] = CatCode.end_of_line
-    //     char_to_cat[WeirdChar.delete.value] = CatCode.invalid
-    //     return char_to_cat
-// class WeirdChar(Enum):
-//     null = chr(0)
-//     line_feed = chr(10)
-//     carriage_return = chr(13)
-//     delete = chr(127)
-
-func catterTest() {
-    r := read.NestedByteReaderFromPath("outer.txt")
+func defaultCatCodes() map[byte]lex.CatCode {
     catCodes := make(map[byte]lex.CatCode)
     for i := byte(0); i < 128; i++ {
         var cat lex.CatCode
@@ -85,7 +63,12 @@ func catterTest() {
         catCodes[i] = cat
     }
     catCodes['^'] = lex.Superscript
+    return catCodes
+}
 
+func catterTest() {
+    r := read.NestedByteReaderFromPath("outer.txt")
+    catCodes := defaultCatCodes()
     catter := lex.NewCatter(r, catCodes)
 
     for {
@@ -99,6 +82,85 @@ func catterTest() {
     }
 }
 
+func lexerTest() {
+    r := read.NestedByteReaderFromPath("outer.txt")
+    catCodes := defaultCatCodes()
+    catter := lex.NewCatter(r, catCodes)
+    lexer := lex.NewLexer(*catter)
+
+    for {
+        tok, err := lexer.ReadToken()
+        if err != nil {
+            fmt.Println(err)
+            break
+        }
+        fmt.Printf("%v %v\n", tok, err)
+    }
+}
+
+type Result interface {
+
+}
+
+type YaLexer struct {
+    lexer lex.Lexer
+    result Result
+}
+
+
+func (ya *YaLexer) Lex(lval *yySymType) int {
+    if ya.result != nil {
+        return 0
+    }
+    tok, err := ya.lexer.ReadToken()
+    if err != nil {
+        return 0
+    }
+    if call, ok := tok.(lex.ControlSequenceCall); ok {
+        lval.valCall = call
+        switch call.Name {
+            case "end":
+                return END
+            case "par":
+                return PAR
+            default:
+                return CONTROL_SEQUENCE
+        }
+    } else if cc, ok := tok.(lex.CharCat); ok {
+        lval.valCharCat = cc
+        return CHAR_CAT
+    } else {
+        panic("Unknown token type")
+    }
+}
+
+func (l *YaLexer) Error(s string) {
+    fmt.Printf("syntax error: %s\n", s)
+}
+
+
+
+func yaccTest() {
+    r := read.NestedByteReaderFromPath("parsetest.txt")
+    catCodes := defaultCatCodes()
+    catter := lex.NewCatter(r, catCodes)
+    lexer := lex.NewLexer(*catter)
+
+    for {
+        parser := yyNewParser()
+        yaLexer := &YaLexer{lexer: *lexer}
+        parser.Parse(yaLexer)
+        fmt.Printf("%v\n", yaLexer.result)
+        if yaLexer.result == nil {
+            break
+        }
+    }
+
+}
+
+
 func main() {
-    catterTest()
+    // catterTest()
+    // lexerTest()
+    yaccTest()
 }

@@ -40,8 +40,13 @@ type Catter struct {
 }
 
 type CharCat struct {
-	Char byte
-	Cat  CatCode
+	Char       byte
+	Cat        CatCode
+	ReaderName string
+	Position   int
+	LineNr     int
+	ColNr      int
+	Length     int
 }
 
 func NewCatter(r read.FancyByteReader, catCodes map[byte]CatCode) *Catter {
@@ -57,32 +62,45 @@ func (p *Catter) CharToCat(char byte) (cat CatCode, err error) {
 }
 
 func (p *Catter) ReadCharCat() (cc CharCat, err error) {
-	char, err := p.reader.ReadByte()
+	fancyByte, err := p.reader.ReadFancyByte()
 	if err != nil {
 		return
 	}
-	cat, err := p.CharToCat(char)
-	cc = CharCat{char, cat}
-	return
-}
-
-func (p *Catter) PeekCharCat(n int) (cc CharCat, err error) {
-	char, err := p.reader.PeekByte(n)
+	cat, err := p.CharToCat(fancyByte.B)
 	if err != nil {
 		return
 	}
-	cat, err := p.CharToCat(char)
-	cc = CharCat{char, cat}
+	cc = CharCat{
+		Char:       fancyByte.B,
+		Cat:        cat,
+		ReaderName: fancyByte.ReaderName,
+		Position:   fancyByte.Position,
+		LineNr:     fancyByte.LineNr,
+		ColNr:      fancyByte.ColNr,
+		Length: 1,
+	}
 	return
 }
 
-func (p *Catter) peekCharCatTrio() (cc CharCat, triod bool, err error) {
-	cc1, err1 := p.PeekCharCat(1)
-	if err1 != nil {
-		return cc, false, err1
+func (p *Catter) PeekCharCat(n int) (char byte, cat CatCode, err error) {
+	char, err = p.reader.PeekByte(n)
+	if err != nil {
+		return
 	}
-	cc2, err2 := p.PeekCharCat(2)
-	cc3, err3 := p.PeekCharCat(3)
+	cat, err = p.CharToCat(char)
+	if err != nil {
+		return
+	}
+	return
+}
+
+func (p *Catter) peekCharCatTrio() (char byte, cat CatCode, triod bool, err error) {
+	char1, cat1, err := p.PeekCharCat(1)
+	if err != nil {
+		return
+	}
+	char2, cat2, err2 := p.PeekCharCat(2)
+	char3, cat3, err3 := p.PeekCharCat(3)
 
 	// For trioing to be happening, requires all of:
 	// - Can peek to next three CharCats without an error such as end-of-file.
@@ -90,41 +108,46 @@ func (p *Catter) peekCharCatTrio() (cc CharCat, triod bool, err error) {
 	// - Next two characters are the same character
 	// - Third character does not have category 'end-of-line'
 	triod = (err2 == nil && err3 == nil &&
-		cc1.Cat == Superscript && cc2.Cat == cc1.Cat &&
-		cc2.Char == cc1.Char && cc3.Cat != EndOfLine)
+		cat1 == Superscript && cat2 == cat1 &&
+		char2 == char1 && cat3 != EndOfLine)
 	if triod {
-		char := cc3.Char
+		char = char3
 		if char >= 64 {
 			char -= 64
 		} else {
 			char += 64
 		}
-		cat, err := p.CharToCat(char)
+		cat, err = p.CharToCat(char)
 		if err != nil {
-			return cc, triod, err
+			return
 		}
-		cc = CharCat{char, cat}
 	} else {
-		cc = cc1
+		char, cat = char1, cat1
 	}
 	return
 }
 
 func (p *Catter) ReadCharCatTrio() (cc CharCat, err error) {
-	cc, triod, err := p.peekCharCatTrio()
+	char, cat, triod, err := p.peekCharCatTrio()
 	// Above function only peeks, so now actually advance by the correct number
 	// of bytes.
+	cc, err = p.ReadCharCat()
 	if triod {
-		p.ReadCharCat()
+		cc.Char = char
+		cc.Cat = cat
+		cc.Length = 3
+
 		p.ReadCharCat()
 		p.ReadCharCat()
 	} else {
-		p.ReadCharCat()
+		if cc.Char != char || cc.Cat != cat {
+			panic("Peeking and reading did not return same results")
+		}
 	}
 	return
 }
 
-func (p *Catter) PeekCharCatTrio() (cc CharCat, err error) {
-	cc, _, err = p.peekCharCatTrio()
+func (p *Catter) PeekCharCatTrio() (char byte, cat CatCode, err error) {
+	char, cat, _, err = p.peekCharCatTrio()
 	return
 }

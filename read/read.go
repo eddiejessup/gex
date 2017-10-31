@@ -28,7 +28,7 @@ type NestedChild interface {}
 
 type fancyByte struct {
     B byte
-    Path string
+    ReaderName string
     Position int
     LineNr int
     ColNr int
@@ -36,14 +36,14 @@ type fancyByte struct {
 
 type FancyByteReader interface {
     io.ByteReader
-    PeekByte(n int) (byte, error)
     ReadFancyByte() (fancyByte, error)
+    PeekByte(n int) (byte, error)
 }
 
 type NestedByteReader struct {
-    name string
+    Name string
     contents []NestedChild
-    position int
+    Position int
     LineNr int
     ColNr int
 }
@@ -53,7 +53,7 @@ func NestedByteReaderFromBytes(name string, bs []byte) *NestedByteReader {
     for i, b := range bs {
         contents[i] = b
     }
-    return &NestedByteReader{name: name, contents: contents}
+    return &NestedByteReader{Name: name, contents: contents}
 }
 
 func NestedByteReaderFromReader(name string, r io.Reader) *NestedByteReader {
@@ -68,10 +68,10 @@ func NestedByteReaderFromPath(p string) *NestedByteReader {
 }
 
 func (p *NestedByteReader) innerReader() (r NestedChild, err error) {
-    if p.position > len(p.contents) - 1 {
+    if p.Position > len(p.contents) - 1 {
         err = ExhaustedError{}
     } else {
-        r = p.contents[p.position]
+        r = p.contents[p.Position]
     }
     return
 }
@@ -85,9 +85,9 @@ func (p *NestedByteReader) ReadFancyByte() (v fancyByte, err error) {
         }
 
         if b, ok := innerR.(byte); ok {
-            v = fancyByte{B: b, Position: p.position,
+            v = fancyByte{B: b, ReaderName: p.Name, Position: p.Position,
                           LineNr: p.LineNr, ColNr: p.ColNr}
-            p.position++
+            p.Position++
             if b == '\n' {
                 p.LineNr++
                 p.ColNr = 0
@@ -103,7 +103,7 @@ func (p *NestedByteReader) ReadFancyByte() (v fancyByte, err error) {
             } else if _, ok := errB.(ExhaustedError); ok {
                 // We must have exhausted the current inner reader.
                 // Move to the next one and try again.
-                p.position++            
+                p.Position++            
             } else {
                 // Unknown error, return it.
                 return v, errB
@@ -127,7 +127,7 @@ func (p *NestedByteReader) PeekByte(n int) (v byte, err error) {
     }
 
     nToRead := n
-    positionTemp := p.position
+    positionTemp := p.Position
 
     for {
         // If we have reached the end of this reader's contents, return an
@@ -183,7 +183,7 @@ func (p *NestedByteReader) Insert(r NestedChild) {
     if v, ok := innerR.(*NestedByteReader); ok {
         v.Insert(r)                
     } else {
-        i := p.position
+        i := p.Position
         p.contents = append(p.contents[:i], append([]NestedChild{r}, p.contents[i:]...)...)        
     }
 }
